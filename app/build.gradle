@@ -1,0 +1,104 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'kotlin-kapt'
+    id 'dagger.hilt.android.plugin'
+}
+
+android {
+    namespace 'com.kapil.tvtest'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.kapil.tvtest"
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+    }
+    buildFeatures {
+        compose true
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.4.5"
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+
+    implementation 'androidx.core:core-ktx:1.8.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.5.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.6.1'
+
+
+    // ViewModel & LiveData (Lifecycle)
+    implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2"
+    implementation "androidx.lifecycle:lifecycle-livedata-ktx:2.6.2"
+
+    // Retrofit for Networking
+    implementation "com.squareup.retrofit2:retrofit:2.9.0"
+    implementation "com.squareup.retrofit2:converter-gson:2.9.0"
+
+    // Kotlin Coroutines
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
+
+    // Material Design (optional UI)
+    implementation "com.google.android.material:material:1.10.0"
+
+    // Logging Interceptor (Optional for debugging API)
+    implementation "com.squareup.okhttp3:logging-interceptor:4.11.0"
+
+
+    implementation 'com.google.dagger:hilt-android:2.50'
+    kapt 'com.google.dagger:hilt-compiler:2.50'
+
+    implementation "androidx.activity:activity-ktx:1.8.0"
+    implementation "androidx.fragment:fragment-ktx:1.6.2"
+
+
+    implementation platform("androidx.compose:compose-bom:2023.10.01")
+
+// Core UI dependencies
+    implementation "androidx.compose.ui:ui:1.4.3"
+    implementation "androidx.compose.material:material:1.4.3"
+    implementation "androidx.compose.ui:ui-tooling-preview:1.4.3"
+    debugImplementation "androidx.compose.ui:ui-tooling"
+    debugImplementation "androidx.compose.ui:ui-test-manifest"
+
+// Lifecycle support
+    implementation "androidx.lifecycle:lifecycle-runtime-compose:2.6.2"
+
+// Activity support for Compose
+    implementation "androidx.activity:activity-compose:1.8.0"
+
+    // Coil for images
+    implementation("io.coil-kt:coil-compose:2.5.0")
+
+// ExoPlayer
+    implementation 'androidx.media3:media3-exoplayer:1.3.1'
+    implementation 'androidx.media3:media3-ui:1.3.1'
+
+    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2"
+
+    implementation "androidx.compose.runtime:runtime-livedata:1.6.1" // or your Compose version
+
+}
