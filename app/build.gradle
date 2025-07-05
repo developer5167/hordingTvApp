@@ -101,4 +101,9 @@ dependencies {
 
     implementation "androidx.compose.runtime:runtime-livedata:1.6.1" // or your Compose version
 
+
+    implementation('io.socket:socket.io-client:2.0.1') {
+        exclude group: 'org.json', module: 'json' // Important for Android
+    }
+
 }

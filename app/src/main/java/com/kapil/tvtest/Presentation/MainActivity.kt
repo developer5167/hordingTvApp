@@ -1,23 +1,29 @@
 package com.kapil.tvtest.Presentation
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -25,9 +31,13 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.kapil.tvtest.domain.model.AdDataModel
+import com.kapil.tvtest.domain.model.Ads
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -41,7 +51,7 @@ class MainActivity : AppCompatActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     viewModel.getAds()
-
+    viewModel.connectToSocket()
     setContent {
       MediaSequencer()
     }
@@ -50,47 +60,185 @@ class MainActivity : AppCompatActivity() {
   @OptIn(ExperimentalCoroutinesApi::class)
   @Composable
   fun MediaSequencer() {
-    val mediaList = viewModel.user.observeAsState(emptyList()).value
-    var currentItem by remember { mutableStateOf<AdDataModel?>(null) }
-    var playSequenceKey by remember { mutableStateOf(0) }
+    val mediaList by viewModel.user.observeAsState(AdDataModel())
+    var currentItem by remember { mutableStateOf<Ads?>(null) }
+    val isPaused by viewModel.pauseAllAds.collectAsState()
+    val isClientAdsDisabled by viewModel.isClientAdsDisabled.collectAsState()
+    var clientAdIndex by remember { mutableStateOf(0) }
+    var companyAdIndex by remember { mutableStateOf(0) }
 
-    LaunchedEffect(mediaList) {
-      mediaList.forEach { item ->
-        viewModel.startTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-        currentItem = item
-        if (item.meme_type.lowercase() == "image") {
-          delay(3000L) // Show image for 3 sec
-        } else { // Wait until video ends — suspend until callback
-          suspendCancellableCoroutine { cont ->
-            videoEndedCallback = {
-              cont.resume(Unit, onCancellation = null)
-            }
-          }
-        }
-        viewModel.updateStats(adDataModel =item)
+
+    if (mediaList.ads.isEmpty() && mediaList.companyAds.isEmpty()) {
+      Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text("Something went wrong")
       }
-      viewModel.getAds()
-//      playSequenceKey++
+      return
     }
 
-    currentItem?.let { item ->
-      MemeMediaView(media = item) {
-        videoEndedCallback?.invoke() // Only called by video
-        videoEndedCallback = null
+    if (isPaused) {
+      Box(Modifier.fillMaxSize().background(Color.White), contentAlignment = Alignment.Center) {
+        Text("Ads have been limited")
+      }
+      return
+    }
+
+    LaunchedEffect(mediaList, isClientAdsDisabled) {
+      while (true) {
+        val adList = if (isClientAdsDisabled) mediaList.companyAds else mediaList.ads
+        val startIndex = if (isClientAdsDisabled) companyAdIndex else clientAdIndex
+
+        if (adList.isEmpty()) {
+          delay(2000L)
+          continue
+        }
+
+        for (i in startIndex until adList.size) {
+          val item = adList[i]
+          Log.d("MediaSequencer", "Now playing: ${item.adId} - ${item.memeType}")
+
+          viewModel.startTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+          currentItem = item.copy(adId = "${item.adId}_${System.currentTimeMillis()}")
+
+
+          if (item.memeType?.lowercase() == "image") {
+            delay(3000L)
+          } else {
+            suspendCancellableCoroutine { cont ->
+              videoEndedCallback = {
+                Log.d("MediaSequencer", "Video completed callback triggered")
+                if (cont.isActive) {
+                  cont.resume(Unit,onCancellation = null)
+                }
+              }
+
+              // Fallback: resume if something goes wrong
+              CoroutineScope(Dispatchers.Main).launch {
+                delay(60000L) // 60s fallback
+                if (cont.isActive) cont.resume(Unit,onCancellation = null)
+              }
+            }
+          }
+
+//          if (!isClientAdsDisabled) {
+//            viewModel.updateStats(item)
+//          }
+
+          if (isClientAdsDisabled) {
+            companyAdIndex = i + 1
+            if (companyAdIndex >= mediaList.companyAds.size) companyAdIndex = 0
+          } else {
+            clientAdIndex = i + 1
+            if (clientAdIndex >= mediaList.ads.size) clientAdIndex = 0
+          }
+        }
+
+        // After playing all items, fetch updated list
+        Log.d("MediaSequencer", "Finished loop, fetching new ads...")
+        viewModel.getAds()
+
+        delay(1000L) // allow LiveData to emit and Compose to recompose
+      }
+    }
+
+//    currentItem?.let {
+//      MemeMediaView(media = it) {
+//        Log.d("MediaSequencer", "MemeMediaView completed, invoking callback")
+//        videoEndedCallback?.invoke()
+//        videoEndedCallback = null
+//      }
+//    }
+    currentItem?.let {
+      key(it.adId) { // ✅ forces full recomposition when adId changes
+        MemeMediaView(media = it) {
+          Log.d("MediaSequencer", "MemeMediaView completed, invoking callback")
+          videoEndedCallback?.invoke()
+          videoEndedCallback = null
+        }
       }
     }
   }
 
 
+  //  @OptIn(ExperimentalCoroutinesApi::class)
+//  @Composable
+//  fun MediaSequencer() {
+//    val mediaList by viewModel.user.observeAsState(AdDataModel())
+//    var currentItem by remember { mutableStateOf<Ads?>(null) }
+//    val isPaused by viewModel.pauseAllAds.collectAsState()
+//    val isClientAdsDisabled by viewModel.isClientAdsDisabled.collectAsState()
+//    val loopKey by viewModel.loopKey.collectAsState()
+//
+//    if (mediaList.ads.isEmpty() && mediaList.companyAds.isEmpty()) { // Case: No ads at all
+//      Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+//        Text("Something went wrong")
+//      }
+//      return
+//    }
+//    if (isPaused) {
+//      Box(modifier = Modifier
+//        .fillMaxSize()
+//        .background(Color.White), contentAlignment = Alignment.Center) {
+//        Text("Ads have been limited")
+//      }
+//      return
+//    }
+//    LaunchedEffect(mediaList,isClientAdsDisabled,loopKey) {
+//      while (true) {
+//          val adList = when {
+//            isClientAdsDisabled -> mediaList.companyAds
+//            mediaList.ads.isNotEmpty() -> mediaList.ads
+//            else -> mediaList.companyAds
+//          }
+//
+//        for (item in adList) {
+//          viewModel.startTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+//          currentItem = item
+//          if (item.memeType?.lowercase() == "image") {
+//            delay(3000L)
+//          } else {
+//            suspendCancellableCoroutine { cont ->
+//              videoEndedCallback = {
+//                println("VIDEO PLAY FINISHED")
+//                cont.resume(Unit, onCancellation = null)
+//              }
+//              CoroutineScope(Dispatchers.Main).launch {
+//                delay(60000L)
+//                if (cont.isActive) cont.resume(Unit,onCancellation = null)
+//              }
+//            }
+//
+//          }
+//
+//          // Only update stats if it's client ad
+//          if (!isClientAdsDisabled && mediaList.ads.isNotEmpty()) {
+//            viewModel.updateStats(adDataModel = item)
+//          }
+//        }
+//        viewModel.getAds()
+//        viewModel.restartLoop()
+//      }
+//    }
+//
+//    // Show media
+//    currentItem?.let {
+//      MemeMediaView(media = it) {
+//        videoEndedCallback?.invoke()
+//        videoEndedCallback = null
+//      }
+//    }
+//
+//
+//  }
+
 
   @Composable
-  fun MemeMediaView(media: AdDataModel, onComplete: () -> Unit) {
-    when (media.meme_type.lowercase()) {
+  fun MemeMediaView(media: Ads, onComplete: () -> Unit) {
+    when (media.memeType?.lowercase()) {
       "image" -> {
-        AsyncImage(model = media.ad_data, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) // No need for delay here — handled in forEach loop
+        AsyncImage(model = media.adData, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) // No need for delay here — handled in forEach loop
       }
       "video" -> {
-        ExoPlayerView(videoUrl = media.ad_data, onVideoEnded = onComplete)
+        media.adData?.let { ExoPlayerView(videoUrl = it, onVideoEnded = onComplete) }
       }
       else -> {
         Text("Unsupported media")
@@ -132,38 +280,5 @@ class MainActivity : AppCompatActivity() {
     }, modifier = Modifier.fillMaxSize())
   }
 
-  override fun onStart() {
-    super.onStart()
-    println("LIFE-CYCLE: onStart")
-  }
 
-  override fun onResume() {
-    super.onResume()
-    println("LIFE-CYCLE: onResume")
-  }
-
-  override fun onDestroy() {
-    super.onDestroy()
-    println("LIFE-CYCLE: onDestroy")
-  }
-
-  override fun onPause() {
-    super.onPause()
-    println("LIFE-CYCLE: onPause")
-  }
-
-  override fun onStop() {
-    super.onStop()
-    println("LIFE-CYCLE: onStop")
-  }
-
-  override fun onRestart() {
-    super.onRestart()
-    println("LIFE-CYCLE: onRestart")
-  }
-
-  @Composable
-  @Preview
-  fun ShowPreview() {
-  }
 }

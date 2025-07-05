@@ -6,8 +6,8 @@ import com.kapil.tvtest.domain.model.UpdateStats
 import javax.inject.Inject
 
 class RepositoryImpl @Inject constructor(private val apiService: ApiService) : Repository {
-  override suspend fun getAds(): List<AdDataModel> {
-    return apiService.getAds(Constants.deviceId).toDomain()
+  override suspend fun getAds(): AdDataModel {
+    return apiService.getAds(Constants.deviceId)
   }
 
   override suspend fun updateStats(updateStats: UpdateStats) {

@@ -4,7 +4,7 @@ import com.kapil.tvtest.domain.model.AdDataModel
 import com.kapil.tvtest.domain.model.UpdateStats
 import javax.inject.Inject
 class UseCase @Inject constructor(private val repository: Repository) {
-  suspend fun getAds(): List<AdDataModel> {
+  suspend fun getAds(): AdDataModel {
     return repository.getAds()
   }
   suspend fun updateStats(updateStats: UpdateStats) {
